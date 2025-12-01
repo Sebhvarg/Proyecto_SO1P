@@ -1,7 +1,7 @@
 #ifndef GATEWAY_H
 #define GATEWAY_H
 
-#define BUFFER_SIZE 1024
+#define GATEWAY_BUFFER_SIZE 1024
 
 typedef struct {
     int id;
