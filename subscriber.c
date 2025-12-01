@@ -12,7 +12,7 @@ void suscribe_to_topic(const char *topic) {
     char buffer[BUFFER_SIZE] = {0};
 
     if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        printf("\n Error al crear el socket \n");
+        printf("\n Error al crear socket \n");
         return;
     }
 
@@ -21,7 +21,7 @@ void suscribe_to_topic(const char *topic) {
 
     // Convertir direcciones IPv4 e IPv6 de texto a binario
     if(inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0) {
-        printf("\nDireccion invalida/ Direccion no soportada \n");
+        printf("\nDireccion invalida\n");
         return;
     }
     if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
@@ -32,7 +32,7 @@ void suscribe_to_topic(const char *topic) {
     char subscribe_msg[BUFFER_SIZE];
     snprintf(subscribe_msg, sizeof(subscribe_msg), "SUBSCRIBE %s", topic);
     send(sock , subscribe_msg , strlen(subscribe_msg) , 0 );
-    printf("Suscrito al tema: %s\n", topic);
+    printf("Suscrito al topic: %s\n", topic);
     
     while (1) {
         int valread = read( sock , buffer, BUFFER_SIZE);
@@ -52,7 +52,7 @@ void suscribe_to_topic(const char *topic) {
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
-        fprintf(stderr, "Uso: %s <topic>\n", argv[0]);
+        fprintf(stderr, "Uso: %s <topic>\n Ejemplo: %s temperatura \n", argv[0], argv[0]);
         return 1;
     }
     const char *topic = argv[1];

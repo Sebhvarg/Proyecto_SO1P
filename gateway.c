@@ -34,7 +34,7 @@ void initialize_gateway(int port) {
         close(server_socket);
         exit(EXIT_FAILURE);
     }
-    printf("Gateway escuchando en el puerto %d\n", port);
+    printf("Gateway TCP escuchando en el puerto %d\n", port);
 
     while (1)
     {
@@ -61,75 +61,65 @@ void *handle_client_connection(void *arg) {
     char topic[MAX_TOPICS];
     char value[MAX_VALUE_LENGTH];
     ssize_t read_size;
-    printf("Cliente conectado: ID %d\n", client_info->id);
+    
+    printf("Cliente TCP conectado: ID %d\n", client_info->id);
 
-    // Leer la solicitud HTTP
-    read_size = recv(client_socket, buffer, GATEWAY_BUFFER_SIZE - 1, 0);
-    if (read_size <= 0) {
-        printf("Cliente desconectado o error de lectura: ID %d\n", client_info->id);
-        close(client_socket);
-        free(client_info);
-        pthread_exit(NULL);
-    }
-    buffer[read_size] = '\0';
+    // Leer datos TCP raw (el ESP32 puede enviar múltiples líneas)
+    while ((read_size = recv(client_socket, buffer, GATEWAY_BUFFER_SIZE - 1, 0)) > 0) {
+        buffer[read_size] = '\0';
+        
+        // Procesar cada línea recibida
+        char *line = strtok(buffer, "\n");
+        while (line != NULL) {
+            // Eliminar carriage return si existe
+            char *cr = strchr(line, '\r');
+            if (cr) *cr = '\0';
+            
+            // Parsear el formato: "topic value"
+            if (sscanf(line, "%s %[^\n]", topic, value) == 2) {
+                printf("Mensaje TCP recibido del cliente %d: Topic: %s, Value: %s\n", 
+                       client_info->id, topic, value);
+                
+                // Publicar el mensaje en el broker
+                publish_message(topic, value);
 
-    // Buscar el final de los encabezados HTTP (\r\n\r\n)
-    char *body = strstr(buffer, "\r\n\r\n");
-    if (body) {
-        body += 4; // Saltar los caracteres \r\n\r\n
-    } else {
-        // Intentar con \n\n si \r\n\r\n no se encuentra
-        body = strstr(buffer, "\n\n");
-        if (body) {
-            body += 2;
-        } else {
-            // Si no hay encabezados, asumir que es raw data (para compatibilidad o pruebas simples)
-            body = buffer;
+                // Enviar respuesta TCP simple
+                const char *response = "OK\n";
+                send(client_socket, response, strlen(response), 0);
+                
+                // Notificar al broker
+                int broker_socket = socket(AF_INET, SOCK_STREAM, 0);
+                struct sockaddr_in broker_addr;
+                broker_addr.sin_family = AF_INET;
+                broker_addr.sin_port = htons(PORT);
+                inet_pton(AF_INET, "127.0.0.1", &broker_addr.sin_addr);
+                
+                if (connect(broker_socket, (struct sockaddr *)&broker_addr, sizeof(broker_addr)) < 0) {
+                    perror("Fallo en la conexion al broker");
+                    close(broker_socket);
+                } else {
+                    char broker_msg[GATEWAY_BUFFER_SIZE];
+                    snprintf(broker_msg, sizeof(broker_msg), "PUBLISH %s %s", topic, value);
+                    send(broker_socket, broker_msg, strlen(broker_msg), 0);
+                    close(broker_socket);
+                }
+            } else if (strlen(line) > 0) {
+                printf("Formato TCP invalido del cliente %d: %s\n", client_info->id, line);
+                const char *response = "ERROR\n";
+                send(client_socket, response, strlen(response), 0);
+            }
+            
+            line = strtok(NULL, "\n");
         }
     }
 
-    // Verificar si es una peticion GET (browser check)
-    if (strncmp(buffer, "GET", 3) == 0) {
-        const char *response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 13\r\n\r\nGateway Ready\n";
-        send(client_socket, response, strlen(response), 0);
-        printf("Respuesta GET enviada al cliente %d\n", client_info->id);
-    } 
-    // Parsear el contenido (Topic Value) para POST u otros
-    else if (sscanf(body, "%s %s", topic, value) == 2) {
-        printf("Mensaje recibido del cliente %d: Topic: %s, Value: %s\n", client_info->id, topic, value);
-        
-        // Publicar el mensaje en el broker
-        publish_message(topic, value);
-
-        // Enviar respuesta HTTP 200 OK
-        const char *response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 18\r\n\r\nMessage Published\n";
-        send(client_socket, response, strlen(response), 0);
-        
-        // Notificar al broker (codigo original mantenido pero adaptado)
-        int broker_socket = socket(AF_INET, SOCK_STREAM, 0);
-        struct sockaddr_in broker_addr;
-        broker_addr.sin_family = AF_INET;
-        broker_addr.sin_port = htons(PORT);
-        inet_pton(AF_INET, "127.0.0.1", &broker_addr.sin_addr);
-        if (connect(broker_socket, (struct sockaddr *)&broker_addr, sizeof(broker_addr)) < 0) {
-            perror("Fallo en la conexion al broker");
-            close(broker_socket);
-        } else {
-            // Reconstruir el mensaje simple para el broker si es necesario, o enviar el raw
-            // Aqui enviamos el formato "PUBLISH topic value" que espera el broker en handle_client
-            char broker_msg[GATEWAY_BUFFER_SIZE];
-            snprintf(broker_msg, sizeof(broker_msg), "PUBLISH %s %s", topic, value);
-            send(broker_socket, broker_msg, strlen(broker_msg), 0);
-            close(broker_socket);
-        }
-
+    // Cliente desconectado
+    if (read_size == 0) {
+        printf("Cliente TCP desconectado: ID %d\n", client_info->id);
     } else {
-        printf("Formato de mensaje invalido: %s\n", body);
-        const char *response = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\nContent-Length: 15\r\n\r\nInvalid Format\n";
-        send(client_socket, response, strlen(response), 0);
+        printf("Error de lectura del cliente TCP: ID %d\n", client_info->id);
     }
-
-    // Cerrar conexión (HTTP no persistente para este ejemplo simple)
+    
     close(client_socket);
     free(client_info);
     pthread_exit(NULL);
