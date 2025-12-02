@@ -11,76 +11,87 @@
 #include <time.h>
 
 void start_publisher(int port) {
-    int server_socket, new_socket;
-    struct sockaddr_in server_addr;
-    int addr_len = sizeof(server_addr);
-    pthread_t thread_id;
-
-    // Crear el socket del servidor
-    if ((server_socket = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
-        perror("Creacion del socket fallida");
-        exit(EXIT_FAILURE);
-    }
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(port);
-
-    // Enlazar el socket
-    if (bind(server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-        perror("Fallo en el bind");
-        close(server_socket);
-        exit(EXIT_FAILURE);
-    }
-
-    // Escuchar conexiones entrantes
-    if (listen(server_socket, MAX_CLIENTS) < 0) {
-        perror("Fallo en el listen");
-        close(server_socket);
-        exit(EXIT_FAILURE);
-    }
-    printf("Publisher escuchando en el puerto %d\n", port);
-
-    while (1)
-    {
-        if ((new_socket = accept(server_socket, (struct sockaddr *)&server_addr, (socklen_t*)&addr_len))<0) {
-            perror("Fallo en el accept");
-            continue;
-        }
-        int *client_socket = malloc(sizeof(int));
-        *client_socket = new_socket;
-
-        if (pthread_create(&thread_id, NULL, send_messages, (void *)client_socket) != 0) {
-            perror("Fallo en la creacion del hilo");
-            free(client_socket);
-        }
-        pthread_detach(thread_id); // Desvincular el hilo para que libere recursos al terminar
-    }
+    (void)port;
+    // This function is deprecated - publishers now connect to gateways directly
+    printf("Warning: start_publisher() called but publishers now use send_messages() directly\n");
 }
 
 void *send_messages(void *arg) {
-    int client_socket = *((int *)arg);
-    free(arg);
+    publisher_config_t *config = (publisher_config_t *)arg;
+    int publisher_id = config->publisher_id;
+    int gateway_port = config->gateway_port;
+    free(config);
+
+    int gateway_socket;
+    struct sockaddr_in gateway_addr;
     char buffer[PUBLISHER_BUFFER_SIZE];
-    srand(time(NULL) + client_socket); // Semilla para valores aleatorios
+    srand(time(NULL) + publisher_id); // Semilla para valores aleatorios
 
+    printf("Publisher %d iniciado, conectando al Gateway en puerto %d\n", publisher_id, gateway_port);
+
+    // Conectar al gateway
     while (1) {
-        // Simular la creacion de un mensaje
-        char topic[MAX_TOPICS];
-        char value[MAX_VALUE_LENGTH];
-        snprintf(topic, sizeof(topic), "topic_%d", rand() % 10);
-        snprintf(value, sizeof(value), "value_%d", rand() % 100);
+        gateway_socket = socket(AF_INET, SOCK_STREAM, 0);
+        if (gateway_socket < 0) {
+            perror("Error creando socket");
+            sleep(2);
+            continue;
+        }
 
-        // Formatear el mensaje
-        snprintf(buffer, sizeof(buffer), "%s:%s", topic, value);
+        gateway_addr.sin_family = AF_INET;
+        gateway_addr.sin_port = htons(gateway_port);
+        inet_pton(AF_INET, "127.0.0.1", &gateway_addr.sin_addr);
 
-        // Enviar el mensaje al broker
-        send(client_socket, buffer, strlen(buffer), 0);
-        printf("Mensaje enviado: %s\n", buffer);
+        if (connect(gateway_socket, (struct sockaddr *)&gateway_addr, sizeof(gateway_addr)) < 0) {
+            printf("Publisher %d: esperando al Gateway en puerto %d...\n", publisher_id, gateway_port);
+            close(gateway_socket);
+            sleep(2);
+            continue;
+        }
 
-        sleep(2); // Esperar antes de enviar el siguiente mensaje
+        printf("Publisher %d: conectado al Gateway en puerto %d\n", publisher_id, gateway_port);
+        break;
     }
 
-    close(client_socket);
+    // Enviar mensajes continuamente como ESP32
+    int temperature = 22 + (rand() % 10);  // 22-31°C
+    int humidity = 45 + (rand() % 20);     // 45-64%
+
+    while (1) {
+        // Simular variación de temperatura
+        temperature = 22 + (rand() % 10);
+        snprintf(buffer, sizeof(buffer), "publisher%d/temperature %d°C\n", publisher_id, temperature);
+        
+        if (send(gateway_socket, buffer, strlen(buffer), 0) < 0) {
+            printf("Publisher %d: Error enviando temperatura, reconectando...\n", publisher_id);
+            close(gateway_socket);
+            sleep(2);
+            // Intentar reconectar
+            gateway_socket = socket(AF_INET, SOCK_STREAM, 0);
+            gateway_addr.sin_family = AF_INET;
+            gateway_addr.sin_port = htons(gateway_port);
+            inet_pton(AF_INET, "127.0.0.1", &gateway_addr.sin_addr);
+            connect(gateway_socket, (struct sockaddr *)&gateway_addr, sizeof(gateway_addr));
+            continue;
+        }
+        printf("Publisher %d TX: %s", publisher_id, buffer);
+        sleep(1);
+
+        // Simular variación de humedad
+        humidity = 45 + (rand() % 20);
+        snprintf(buffer, sizeof(buffer), "publisher%d/humidity %d%%\n", publisher_id, humidity);
+        
+        if (send(gateway_socket, buffer, strlen(buffer), 0) < 0) {
+            printf("Publisher %d: Error enviando humedad, reconectando...\n", publisher_id);
+            close(gateway_socket);
+            sleep(2);
+            continue;
+        }
+        printf("Publisher %d TX: %s", publisher_id, buffer);
+        sleep(4); // Esperar antes del siguiente ciclo
+    }
+
+    close(gateway_socket);
     return NULL;
 }
 
