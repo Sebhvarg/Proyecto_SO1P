@@ -48,7 +48,7 @@ int main(int argc, char *argv[]) {
         int publisher_id = i + 1; // IDs comienzan en 2 (1 reservado para ESP32)
         
         // Calcular a qué gateway debe conectarse este publisher
-        int gateway_index = (publisher_id - 1) / 3 + 1;  // Publishers 1-3 -> Gateway 1, 4-6 -> Gateway 2, etc.
+        int gateway_index = (publisher_id - 1) / 3 + 1; 
         int gateway_port = 9000 + gateway_index;
         
         // Crear configuración para el publisher

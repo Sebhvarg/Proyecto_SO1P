@@ -12,8 +12,6 @@
 
 void start_publisher(int port) {
     (void)port;
-    // This function is deprecated - publishers now connect to gateways directly
-    printf("Warning: start_publisher() called but publishers now use send_messages() directly\n");
 }
 
 void *send_messages(void *arg) {

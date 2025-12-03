@@ -1,29 +1,24 @@
 #include <WiFi.h>
 
-// Lightweight custom protocol over TCP to your gateway
-// Each line: "publisher<ID>/<metric> <value>" (matches C gateway/broker)
-// Example: "publisher1/temperature 26°C" then "publisher1/humidity 55%"
-
-// WiFi config (Wokwi-GUEST in simulator or your WiFi)
+// Configuración WiFi
 const char* WIFI_SSID = "Wokwi-GUEST";
 const char* WIFI_PASS = "";
 
-// Gateway tunnel endpoint (use ngrok or public IP:port to your gateway)
-// Set these to the TCP address that forwards to your local gateway port (1884 for gateway 1)
-String GATEWAY_HOST = "0.tcp.sa.ngrok.io";  // placeholder; replace after creating tunnel
-uint16_t GATEWAY_PORT = 19343;          // placeholder; replace after creating tunnel
+// Configuración del Gateway
+String GATEWAY_HOST = "0.tcp.sa.ngrok.io";  
+uint16_t GATEWAY_PORT = 10166;          
 
-// Publisher identity and metrics
-int publisherId = 1; // adjust per instance
+// ID del publisher
+int publisherId = 1; 
 
 WiFiClient client;
 
-// FreeRTOS tasks
+// FreeRTOS 
 TaskHandle_t tempTaskHandle = nullptr;
 TaskHandle_t humidTaskHandle = nullptr;
 TaskHandle_t sendTaskHandle = nullptr;
 
-// Shared sensor data
+// Datos 
 volatile int currentTemp = 25;
 volatile int currentHumid = 50;
 
@@ -55,7 +50,7 @@ bool connectGateway() {
   }
 }
 
-// Simulate temperature sensor
+// Simula la temperatura del sensor
 void tempTask(void* pv) {
   for (;;) {
     int base = 22 + (millis() / 60000) % 6; // drift
@@ -64,7 +59,7 @@ void tempTask(void* pv) {
   }
 }
 
-// Simulate humidity sensor
+// Simula la humedad del sensor
 void humidTask(void* pv) {
   for (;;) {
     int base = 45 + (millis() / 60000) % 10;
@@ -73,7 +68,7 @@ void humidTask(void* pv) {
   }
 }
 
-// Send both metrics periodically in text mode
+// Envía 
 void sendTask(void* pv) {
   char line[128];
   for (;;) {
@@ -101,13 +96,13 @@ void setup() {
   delay(200);
   connectWifi();
 
-  // Start tasks
+  // Inicia las tareas
   xTaskCreatePinnedToCore(tempTask,   "tempTask",  2048, nullptr, 1, &tempTaskHandle, 1);
   xTaskCreatePinnedToCore(humidTask,  "humidTask", 2048, nullptr, 1, &humidTaskHandle, 1);
   xTaskCreatePinnedToCore(sendTask,   "sendTask",  4096, nullptr, 1, &sendTaskHandle, 0);
 }
 
 void loop() {
-  // no-op; work done in FreeRTOS tasks
+  
   vTaskDelay(pdMS_TO_TICKS(1000));
 }
