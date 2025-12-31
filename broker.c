@@ -6,8 +6,7 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <time.h>
-#include "time.h"
-#include "gateway.h"
+
 
 pthread_mutex_t msg_mutex;
 subscriber_t *subscribers_head = NULL;
